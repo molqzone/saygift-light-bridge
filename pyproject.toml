@@ -1,0 +1,15 @@
+[project]
+name = "saygift-light-bridge"
+version = "0.1.0"
+description = "Default template for PDM package"
+authors = [
+    {name = "keruth", email = "k3ruth@outlook"},
+]
+dependencies = ["requests>=2.32.5", "paho-mqtt>=2.1.0", "toml>=0.10.2"]
+requires-python = "==3.13.*"
+readme = "README.md"
+license = {text = "MIT"}
+
+
+[tool.pdm]
+distribution = false
