@@ -32,7 +32,7 @@ class LightController:
             "Content-Type": "application/x-www-form-urlencoded",
             "Origin": "https://h5.saygift.cc",
             "Referer": "https://h5.saygift.cc/",
-            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:143.0) Gecko/20100101 Firefox/143.0"
+            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:143.0) Gecko/20100101 Firefox/143.0",
         }
 
         log.info(f"LightController initialized for SN: {self.serial_number}")
@@ -46,31 +46,36 @@ class LightController:
             or None if the request fails.
         """
         log.debug("Attempting to get device state from cloud...")
-        params = {'serialNumber': self.serial_number}
+        params = {"serialNumber": self.serial_number}
         try:
             response = requests.get(
                 self.status_url,
                 headers=self.headers,
                 params=params,
-                timeout=self.timeout
+                timeout=self.timeout,
             )
             # Raise an exception for bad status codes (4xx or 5xx)
             response.raise_for_status()
             response_json = response.json()
 
-            if response_json.get('flag') and 'data' in response_json:
-                device_data = response_json['data']
-                luminance = int(device_data.get('luminance', 0))
+            if response_json.get("flag") and "data" in response_json:
+                device_data = response_json["data"]
+                luminance = int(device_data.get("luminance", 0))
                 is_on = luminance > 0
 
                 # Convert the device's 0-100 brightness scale to Home Assistant's 0-255 scale
                 brightness_255 = round(luminance * 2.55) if is_on else 0
 
-                state = {"state": "ON" if is_on else "OFF", "brightness": brightness_255}
+                state = {
+                    "state": "ON" if is_on else "OFF",
+                    "brightness": brightness_255,
+                }
                 log.debug(f"Successfully polled state: {state}")
                 return state
             else:
-                log.warning(f"API returned failure flag: {response_json.get('errMessage')}")
+                log.warning(
+                    f"API returned failure flag: {response_json.get('errMessage')}"
+                )
                 return None
 
         except requests.exceptions.RequestException as e:
@@ -80,49 +85,51 @@ class LightController:
             log.error(f"Error parsing state response from API: {e}")
             return None
 
-    def set_state(self, power: bool, brightness: int = None, light_type: int = 3) -> bool:
+    def set_state(
+        self, power: bool, brightness: int = None, light_type: int = 3
+    ) -> bool:
         """
         Sends a command to the cloud API to set the light's state.
-
-        Args:
-            power (bool): The desired power state (True for ON, False for OFF).
-            brightness (int, optional): The desired brightness on a 0-255 scale (Home Assistant's scale).
-                                       This is only used if power is True. Defaults to None.
-            light_type (int, optional): The light mode. Defaults to 3.
-
-        Returns:
-            True if the command was sent and the API confirmed success, False otherwise.
+        (Updated to correctly handle brightness: 0 as a turn-off command)
         """
-        log.debug(f"Attempting to set device state: power={power}, brightness={brightness}")
+        log.debug(
+            f"Attempting to set device state: power={power}, brightness={brightness}"
+        )
         payload = {
-            'serialNumber': self.serial_number,
-            'id': self.device_id,
-            'lightType': light_type
+            "serialNumber": self.serial_number,
+            "id": self.device_id,
+            "lightType": light_type,
         }
 
-        if not power:
-            payload['luminance'] = 0
+        # If the power command is OFF, OR if the brightness is explicitly set to 0,
+        # we treat it as a command to turn the light off.
+        if not power or (brightness is not None and brightness == 0):
+            payload["luminance"] = 0
         elif brightness is not None:
-            # Convert Home Assistant's 0-255 scale to the device's 0-100 scale
+            # If power is ON and brightness is a non-zero value, calculate it.
+            # Convert Home Assistant's 1-255 scale to the device's 1-100 scale.
             device_brightness = max(1, round(brightness / 2.55))
-            payload['luminance'] = device_brightness
-        # If power is ON but brightness is None, the light will likely turn on at its previous brightness.
+            payload["luminance"] = device_brightness
+        # If power is ON but brightness is None, the payload won't contain 'luminance'.
+        # The light will then turn on at its last known brightness level.
 
         try:
             response = requests.post(
                 self.control_url,
                 headers=self.headers,
                 data=payload,
-                timeout=self.timeout
+                timeout=self.timeout,
             )
             response.raise_for_status()
             response_json = response.json()
 
-            if response_json.get('flag'):
+            if response_json.get("flag"):
                 log.info(f"Successfully set state with payload: {payload}")
                 return True
             else:
-                log.warning(f"API returned failure flag while setting state: {response_json.get('errMessage')}")
+                log.warning(
+                    f"API returned failure flag while setting state: {response_json.get('errMessage')}"
+                )
                 return False
 
         except requests.exceptions.RequestException as e:
